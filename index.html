@@ -1,139 +1,244 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reader View</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { 
-      font-family: system-ui, -apple-system, sans-serif; 
-      margin: 0; 
-      display: flex; 
-      flex-direction: column; 
-      height: 100vh; 
-      background: #1a1a1a;
-    }
-    #toolbar { 
-      padding: 10px 14px; 
-      background: #900; 
-      color: white;
-      display: flex; 
-      gap: 8px; 
-      align-items: center;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    }
-    input { 
-      flex: 1; 
-      padding: 8px 12px; 
-      font-size: 14px; 
-      border: none; 
-      border-radius: 4px; 
-      outline: none;
-    }
-    button { 
-      padding: 8px 14px; 
-      font-size: 14px; 
-      font-weight: bold;
-      background: #fff; 
-      color: #900; 
-      border: none; 
-      border-radius: 4px; 
-      cursor: pointer; 
-    }
-    button:hover { background: #f0f0f0; }
-    #status { font-size: 13px; color: #ffdddd; min-width: 70px; text-align: right; }
-    iframe { flex: 1; border: none; width: 100%; background: #fff; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AO3 Reader</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #111;
+}
+
+#toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: #990000;
+  color: white;
+}
+
+#urlInput {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+button {
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: bold;
+  background: white;
+  color: #990000;
+}
+
+button:hover {
+  background: #eee;
+}
+
+#status {
+  min-width: 80px;
+  text-align: right;
+  font-size: 13px;
+}
+
+iframe {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: white;
+}
+</style>
 </head>
+
 <body>
 
-  <div id="toolbar">
-    <button onclick="loadAO3('https://archiveofourown.org')">Home</button>
-    <input type="text" id="urlInput" value="https://archiveofourown.org" placeholder="Paste AO3 link here..." />
-    <button onclick="loadFromInput()">Go</button>
-    <span id="status">Ready</span>
-  </div>
+<div id="toolbar">
+  <button id="homeBtn">Home</button>
 
-  <iframe id="viewer" sandbox="allow-same-origin allow-scripts allow-forms"></iframe>
+  <input
+    id="urlInput"
+    type="text"
+    value="https://archiveofourown.org"
+    placeholder="Paste AO3 URL..."
+  >
 
-  <script>
-    const viewer = document.getElementById('viewer');
-    const urlInput = document.getElementById('urlInput');
-    const statusText = document.getElementById('status');
+  <button id="goBtn">Go</button>
 
-    function loadFromInput() {
-      let url = urlInput.value.trim();
-      if (!url.startsWith('http')) url = 'https://' + url;
-      loadAO3(url);
+  <span id="status">Ready</span>
+</div>
+
+<iframe
+  id="viewer"
+  sandbox="allow-same-origin allow-scripts allow-forms"
+></iframe>
+
+<script>
+const viewer = document.getElementById("viewer");
+const urlInput = document.getElementById("urlInput");
+const statusText = document.getElementById("status");
+
+document.getElementById("homeBtn").addEventListener("click", () => {
+  loadAO3("https://archiveofourown.org");
+});
+
+document.getElementById("goBtn").addEventListener("click", loadFromInput);
+
+urlInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    loadFromInput();
+  }
+});
+
+function loadFromInput() {
+  let url = urlInput.value.trim();
+
+  if (!url) return;
+
+  if (!/^https?:\/\//i.test(url)) {
+    url = "https://" + url;
+  }
+
+  loadAO3(url);
+}
+
+async function loadAO3(targetUrl) {
+  statusText.textContent = "Loading...";
+  urlInput.value = targetUrl;
+
+  try {
+
+    // AllOrigins proxy
+    const proxyUrl =
+      `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+    const response = await fetch(proxyUrl);
+
+    if (!response.ok) {
+      throw new Error("Proxy request failed");
     }
 
-    urlInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') loadFromInput();
-    });
+    const data = await response.json();
 
-    async function loadAO3(targetUrl) {
-      statusText.textContent = 'Loading...';
-      urlInput.value = targetUrl;
+    if (!data.contents) {
+      throw new Error("No HTML returned");
+    }
 
-      // Uses a public CORS proxy to fetch the HTML
-      const proxyUrl = `https://allorigins.win{encodeURIComponent(targetUrl)}`;
+    let html = data.contents;
+
+    // Add AO3 base URL
+    const baseTag =
+      `<base href="https://archiveofourown.org/">`;
+
+    if (html.includes("<head>")) {
+      html = html.replace("<head>", `<head>${baseTag}`);
+    } else {
+      html = baseTag + html;
+    }
+
+    const doc = viewer.contentWindow.document;
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Handle navigation inside iframe
+    doc.addEventListener("click", event => {
+      const link = event.target.closest("a");
+
+      if (!link) return;
+
+      const href = link.getAttribute("href");
+
+      if (!href) return;
+
+      if (href.startsWith("#")) return;
+
+      event.preventDefault();
 
       try {
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Network error');
-        const data = await response.json();
-        let html = data.contents;
-
-        // Inject <base> tag so AO3 stylesheets and icons load properly
-        const baseTag = `<base href="https://archiveofourown.org">`;
-        if (html.includes('<head>')) {
-          html = html.replace('<head>', `<head>${baseTag}`);
-        } else {
-          html = baseTag + html;
-        }
-
-        // Write HTML into the iframe
-        const doc = viewer.contentWindow.document;
-        doc.open();
-        doc.write(html);
-        doc.close();
-
-        // Intercept all link clicks inside the iframe so they stay inside the proxy
-        doc.addEventListener('click', (e) => {
-          const link = e.target.closest('a');
-          if (link && link.href) {
-            // Allow jump-to-chapter or footnote anchor links on the same page
-            if (link.getAttribute('href').startsWith('#')) return;
-            
-            e.preventDefault();
-            loadAO3(link.href);
-          }
-        });
-
-        // Intercept search forms (GET requests) so searching works inside the proxy
-        doc.addEventListener('submit', (e) => {
-          const form = e.target;
-          if (form.method.toLowerCase() === 'get') {
-            e.preventDefault();
-            const formData = new FormData(form);
-            const params = new URLSearchParams(formData).toString();
-            const actionUrl = form.action || 'https://archiveofourown.orgworks/search';
-            const separator = actionUrl.includes('?') ? '&' : '?';
-            loadAO3(`${actionUrl}${separator}${params}`);
-          }
-        });
-
-        statusText.textContent = 'Loaded';
-      } catch (err) {
-        statusText.textContent = 'Error';
-        alert('Could not load page. The public proxy may be temporarily busy—try clicking Go again.');
+        const nextUrl = new URL(link.href).href;
+        loadAO3(nextUrl);
+      } catch {
+        console.warn("Invalid URL:", link.href);
       }
-    }
+    });
 
-    // Automatically load AO3 homepage on startup
-    window.onload = () => loadAO3('https://archiveofourown.org');
-  </script>
+    // Handle search forms
+    doc.addEventListener("submit", event => {
+
+      const form = event.target;
+
+      if (
+        form.method &&
+        form.method.toLowerCase() === "get"
+      ) {
+
+        event.preventDefault();
+
+        const formData = new FormData(form);
+
+        const params =
+          new URLSearchParams(formData).toString();
+
+        const actionUrl =
+          form.action ||
+          "https://archiveofourown.org/works/search";
+
+        const separator =
+          actionUrl.includes("?") ? "&" : "?";
+
+        loadAO3(
+          `${actionUrl}${separator}${params}`
+        );
+      }
+    });
+
+    statusText.textContent = "Loaded";
+
+  } catch (error) {
+
+    console.error(error);
+
+    statusText.textContent = "Error";
+
+    const doc = viewer.contentWindow.document;
+
+    doc.open();
+    doc.write(`
+      <div style="
+        font-family:sans-serif;
+        padding:20px;
+      ">
+        <h2>Failed to load page</h2>
+        <p>${error.message}</p>
+        <p>
+          AO3 and Cloudflare may block public proxies.
+        </p>
+      </div>
+    `);
+    doc.close();
+  }
+}
+
+window.addEventListener("load", () => {
+  loadAO3("https://archiveofourown.org");
+});
+</script>
 
 </body>
 </html>
