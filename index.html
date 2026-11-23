@@ -73,7 +73,9 @@ function go() {
         url = "https://" + url;
     }
 
-    window.location.href = "/?url=" + encodeURIComponent(url);
+    window.location.href =
+  "https://zoryntech-api.zoryndev.workers.dev/" +
+  encodeURIComponent(url);
 }
 
 document.getElementById("urlInput").addEventListener("keydown", e => {
